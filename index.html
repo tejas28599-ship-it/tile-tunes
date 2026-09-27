@@ -86,12 +86,41 @@
 
     .tile.start-tile {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 4px;
       color: #ffffff;
       font-size: 20px;
       font-weight: 700;
       letter-spacing: 0.02em;
+    }
+
+    .start-caption {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0;
+      opacity: 0.75;
+    }
+
+    /* Soft pulsing ring so Start reads as the thing to press */
+    .tile.start-tile::before {
+      content: '';
+      position: absolute;
+      inset: 10px;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 6px;
+      pointer-events: none;
+      animation: start-pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes start-pulse {
+      0%, 100% { opacity: 0.25; transform: scale(0.94); }
+      50%      { opacity: 1;    transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tile.start-tile::before { animation: none; opacity: 0.6; }
     }
 
     /* Extra layer on each tile used for the press and flash effects, so only
@@ -302,14 +331,62 @@
       width: 100%;
       max-width: 320px;
       margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
       pointer-events: auto;  /* the start screen itself lets taps through */
       cursor: default;
+    }
+
+    /* Optional song choice: one quiet line showing the song already set */
+    .song-toggle {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      max-width: 100%;
+      padding: 8px 14px;
+      border: none;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.05);
+      color: var(--text);
+      font: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .song-toggle:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .song-toggle-label {
+      color: var(--text-muted);
+    }
+
+    #current-song {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .song-toggle-action {
+      color: var(--accent);
+      font-weight: 600;
+      white-space: nowrap;
     }
 
     .song-list {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      width: 100%;
+    }
+
+    .song-list[hidden] {
+      display: none;
     }
 
     .song-list button {
@@ -482,7 +559,12 @@
       <p class="tagline">Tap the black tiles, avoid the white</p>
       <p class="best-line">Best <span id="start-best">0</span></p>
       <div class="picker">
-        <div id="song-buttons" class="song-list" role="group" aria-label="Song"></div>
+        <button id="song-toggle" class="song-toggle" type="button" aria-expanded="false" aria-controls="song-buttons">
+          <span class="song-toggle-label">Song:</span>
+          <span id="current-song"></span>
+          <span class="song-toggle-action">Change</span>
+        </button>
+        <div id="song-buttons" class="song-list" role="group" aria-label="Choose a song" hidden></div>
       </div>
     </div>
 
@@ -570,6 +652,9 @@
     const flashEl = document.getElementById('flash');
     const bgTints = document.querySelectorAll('.bg-tint');
     const songButtonsEl = document.getElementById('song-buttons');
+    const songToggleEl = document.getElementById('song-toggle');
+    const currentSongEl = document.getElementById('current-song');
+    const songToggleActionEl = songToggleEl.querySelector('.song-toggle-action');
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     // ---- State ----
@@ -821,6 +906,15 @@
       for (const button of songButtonsEl.children) {
         button.setAttribute('aria-pressed', button.songData === selectedSong);
       }
+      currentSongEl.textContent = selectedSong.name;
+    }
+
+    // The song list stays folded away unless the player asks for it, so a
+    // song is never presented as a required step before Start
+    function setSongListOpen(open) {
+      songButtonsEl.hidden = !open;
+      songToggleEl.setAttribute('aria-expanded', open);
+      songToggleActionEl.textContent = open ? 'Close' : 'Change';
     }
 
     function selectSong(song) {
@@ -828,6 +922,7 @@
       melodyIndex = 0;
       updatePicker();
       saveSongName(song.name);
+      setSongListOpen(false);
     }
 
     // ---- Effects (Web Animations API, transform and opacity only) ----
@@ -1172,8 +1267,12 @@
 
       fillRows();
       const startRow = rows[0];
-      startRow.el.textContent = 'Start';
+      const caption = document.createElement('span');
+      caption.className = 'start-caption';
+      caption.textContent = 'Tap to play';
+      startRow.el.append('Start', caption);
       startRow.el.classList.add('start-tile');
+      setSongListOpen(false);
 
       setState('ready');
       draw();
@@ -1234,6 +1333,7 @@
     game.addEventListener('lostpointercapture', handlePointerEnd);
     game.addEventListener('pointermove', handlePointerMove);
     restartBtn.addEventListener('click', resetToStartScreen);
+    songToggleEl.addEventListener('click', () => setSongListOpen(songButtonsEl.hidden));
 
     // Block the browser's own gestures: long-press menu, pinch zoom (iOS
     // Safari ignores user-scalable=no) and any touch scrolling.
