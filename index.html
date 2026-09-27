@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#ffffff">
+  <title>Tile Tunes</title>
+  <style>
+    :root {
+      --board-max-width: 420px;
+      --lane-line: #e2e2e2;
+      --board-bg: #ffffff;
+      --page-bg: #f2f2f2;
+      --tile-color: #111111;
+      --tile-hit: #d6d6d6;
+      --tile-wrong: #e53935;
+      --tile-wrong-flash: #ffcdd2;
+      --text: #111111;
+      --text-muted: #6b6b6b;
+      --accent: #e53935;
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;   /* no pull-to-refresh or bounce */
+    }
+
+    body {
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: var(--font);
+      display: flex;
+      justify-content: center;
+      /* Stop mobile browsers from scrolling, zooming or highlighting on tap */
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;  /* no long-press menu on iOS */
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #game {
+      position: relative;
+      width: 100%;
+      max-width: var(--board-max-width);
+      height: 100vh;   /* fallback */
+      height: 100dvh;  /* real visible height on mobile */
+      background: var(--board-bg);
+      display: flex;
+      overflow: hidden;
+      touch-action: none;
+      cursor: pointer;
+    }
+
+    .lane {
+      position: relative;
+      flex: 1 1 0;
+    }
+
+    .lane + .lane {
+      border-left: 1px solid var(--lane-line);
+    }
+
+    /* Layer that holds the moving tiles, drawn on top of the lanes */
+    #tiles {
+      position: absolute;
+      inset: 0;
+    }
+
+    .tile {
+      position: absolute;
+      top: 0;
+      width: 25%;   /* one lane */
+      height: 25%;  /* 1/4 of the board height */
+      background: var(--tile-color);
+      will-change: transform;
+    }
+
+    .tile.start-tile {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    /* Extra layer on each tile used for the press and flash effects, so only
+       its transform and opacity are ever animated */
+    .tile::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .tile.hit {
+      background: var(--tile-hit);
+    }
+
+    /* Press: a black copy of the tile shrinks and fades away over the grey */
+    .tile.hit::after {
+      background: var(--tile-color);
+      animation: tile-press 0.2s ease-out;
+    }
+
+    @keyframes tile-press {
+      from { opacity: 1; transform: scale(1); }
+      to   { opacity: 0; transform: scale(0.82); }
+    }
+
+    /* The missed tile, or the white cell that was wrongly tapped */
+    .tile.wrong {
+      background: var(--tile-wrong);
+    }
+
+    .tile.wrong::after {
+      background: var(--tile-wrong-flash);
+      animation: wrong-flash 0.3s ease-in-out 3;
+    }
+
+    @keyframes wrong-flash {
+      50% { opacity: 1; }
+    }
+
+    /* ---- Hold tiles ----
+       Same black as normal tiles and 2–4 rows tall (height set inline), with
+       a lighter centre strip and an arrow at the bottom where it's pressed.
+       While held, a lighter fill rises from the bottom (scaleY only). */
+    .hold-strip {
+      position: absolute;
+      top: 10%;
+      bottom: 10%;
+      left: 50%;
+      width: 14%;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .hold-arrow {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 11px solid transparent;
+      border-right: 11px solid transparent;
+      border-bottom: 13px solid rgba(255, 255, 255, 0.75);
+    }
+
+    .hold-fill {
+      position: absolute;
+      inset: 0;
+      transform-origin: bottom;
+      transform: scaleY(0);
+      background: linear-gradient(to top, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.28));
+      will-change: transform;
+    }
+
+    .hold-glow {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+      box-shadow: 0 0 22px 6px rgba(255, 196, 40, 0.9), inset 0 0 0 3px rgba(255, 196, 40, 0.95);
+    }
+
+    /* Finished (fully held) or released early: grey like a hit tile */
+    .tile.hold-full,
+    .tile.hold-partial {
+      background: var(--tile-hit);
+    }
+
+    .tile.hold-full .hold-strip, .tile.hold-full .hold-arrow,
+    .tile.hold-partial .hold-strip, .tile.hold-partial .hold-arrow {
+      opacity: 0;
+    }
+
+    .tile.hold-full .hold-fill {
+      opacity: 0;
+    }
+
+    /* Released early: the fill stays where it stopped, in a darker grey */
+    .tile.hold-partial .hold-fill {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    /* "+2" / "+1" that floats up from a finished hold tile */
+    .bonus-pop {
+      position: absolute;
+      width: 25%;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--accent);
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 8px #fff;
+      pointer-events: none;
+    }
+
+    /* ---- Background tints (one layer per 50 points, crossfaded) ---- */
+    #backgrounds {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .bg-tint {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    }
+
+    .bg-tint.active {
+      opacity: 1;
+    }
+
+    /* ---- Game-over red flash over the whole board ---- */
+    #flash {
+      position: absolute;
+      inset: 0;
+      background: var(--tile-wrong);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* ---- Score ---- */
+    #score {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 0px) + 20px);
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 64px;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      /* White halo keeps the number readable over black tiles */
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 8px #fff;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    #game[data-state="ready"] #score {
+      opacity: 0;
+    }
+
+    /* ---- Overlays ---- */
+    .overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 24px;
+      text-align: center;
+      /* No backdrop blur: it is costly to fade on mid-range phones */
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    /* Start screen covers the top three rows, leaving the Start tile tappable.
+       It fades out when the game starts and back in after a restart. */
+    #start-screen {
+      top: 0;
+      height: 75%;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+    }
+
+    #game[data-state="ready"] #start-screen {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.3s ease;
+    }
+
+    #start-screen h1 {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+    }
+
+    /* ---- Song picker (start screen) ---- */
+    .picker {
+      width: 100%;
+      max-width: 320px;
+      margin-top: 10px;
+      pointer-events: auto;  /* the start screen itself lets taps through */
+      cursor: default;
+    }
+
+    .song-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .song-list button {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1px;
+      width: 100%;
+      padding: 9px 16px;
+      border: 1.5px solid var(--lane-line);
+      border-radius: 12px;
+      background: #ffffff;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .song-list button:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .song-list button[aria-pressed="true"] {
+      border-color: var(--tile-color);
+      background: var(--tile-color);
+      color: #ffffff;
+    }
+
+    .song-name {
+      max-width: 100%;
+      font-size: 16px;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .song-meta {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .song-list button[aria-pressed="true"] .song-meta {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* Shorter phones: tighten the start screen so the picker still fits */
+    @media (max-height: 700px) {
+      #start-screen { gap: 6px; padding: 12px 24px; }
+      #start-screen h1 { font-size: 34px; }
+      .tagline, .best-line { font-size: 15px; }
+      .best-line { margin-top: 2px; }
+      .picker { margin-top: 4px; }
+      .song-list button { padding: 6px 14px; }
+    }
+
+    .tagline {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 22ch;
+      line-height: 1.4;
+      text-wrap: balance;
+    }
+
+    .best-line {
+      margin-top: 8px;
+      font-size: 17px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #game-over {
+      inset: 0;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+      cursor: default;
+    }
+
+    #game-over.visible {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.25s ease;
+    }
+
+    .overlay-label {
+      font-size: 15px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+    }
+
+    #final-score {
+      font-size: 96px;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #new-best {
+      display: none;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    #new-best.visible {
+      display: block;
+    }
+
+    #restart-btn {
+      margin-top: 20px;
+      min-width: 180px;
+      padding: 16px 32px;
+      border: none;
+      border-radius: 999px;
+      background: var(--tile-color);
+      color: #fff;
+      font: inherit;
+      font-size: 19px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #restart-btn:active {
+      transform: scale(0.97);
+    }
+
+    #restart-btn:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    /* On wider screens, give the board a subtle edge so it reads as a phone-sized area */
+    @media (min-width: 421px) {
+      #game {
+        box-shadow: 0 0 0 1px var(--lane-line), 0 8px 32px rgba(0, 0, 0, 0.08);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="game" data-state="ready" aria-label="Tile Tunes game board">
+    <div id="backgrounds" aria-hidden="true">
+      <div class="bg-tint active" style="background: #ffffff"></div>
+      <div class="bg-tint" style="background: #f1f6ff"></div>
+      <div class="bg-tint" style="background: #f1faf3"></div>
+      <div class="bg-tint" style="background: #f6f2ff"></div>
+      <div class="bg-tint" style="background: #fff6ec"></div>
+      <div class="bg-tint" style="background: #fff1f3"></div>
+    </div>
+    <div class="lane" data-lane="0"></div>
+    <div class="lane" data-lane="1"></div>
+    <div class="lane" data-lane="2"></div>
+    <div class="lane" data-lane="3"></div>
+    <div id="tiles"></div>
+    <div id="flash" aria-hidden="true"></div>
+
+    <div id="score" aria-live="off">0</div>
+
+    <div id="start-screen" class="overlay">
+      <h1>Tile Tunes</h1>
+      <p class="tagline">Tap the black tiles, avoid the white</p>
+      <p class="best-line">Best <span id="start-best">0</span></p>
+      <div class="picker">
+        <div id="song-buttons" class="song-list" role="group" aria-label="Song"></div>
+      </div>
+    </div>
+
+    <div id="game-over" class="overlay" role="dialog" aria-label="Game over">
+      <p class="overlay-label">Score</p>
+      <p id="final-score">0</p>
+      <p id="new-best">New best!</p>
+      <p class="best-line">Best <span id="game-over-best">0</span></p>
+      <button id="restart-btn" type="button">Restart</button>
+    </div>
+  </main>
+
+  <script>
+    // =====================================================================
+    // SONGS — add or edit songs here
+    // =====================================================================
+    // Each song is a list of notes, one per correct tap; it loops when it
+    // runs out. Note names are a letter, an optional '#' (sharp) or 'b'
+    // (flat), and an octave: 'C5', 'D#5', 'Bb4'. All three melodies are in
+    // the public domain.
+    const SONGS = [
+      {
+        name: 'Ode to Joy',
+        composer: 'Beethoven',
+        notes: 'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5 D5 D5 ' +
+               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5 ' +
+               'D5 D5 E5 C5 D5 E5 F5 E5 C5 D5 E5 F5 E5 D5 C5 D5 G4 ' +
+               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5'
+      },
+      {
+        name: 'Für Elise',
+        composer: 'Beethoven · opening theme',
+        notes: 'E5 D#5 E5 D#5 E5 B4 D5 C5 A4  C4 E4 A4 B4  E4 G#4 B4 C5 ' +
+               'E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4  C4 E4 A4 B4  E4 C5 B4 A4'
+      },
+      {
+        name: 'Twinkle Twinkle Little Star',
+        composer: 'Traditional',
+        notes: 'C5 C5 G5 G5 A5 A5 G5  F5 F5 E5 E5 D5 D5 C5 ' +
+               'G5 G5 F5 F5 E5 E5 D5  G5 G5 F5 F5 E5 E5 D5 ' +
+               'C5 C5 G5 G5 A5 A5 G5  F5 F5 E5 E5 D5 D5 C5'
+      }
+    ];
+    const DEFAULT_SONG = 'Ode to Joy';
+
+    // =====================================================================
+    // GAME
+    // =====================================================================
+
+    // ---- Settings ----
+    const LANES = 4;
+    const ROWS_ON_SCREEN = 4;        // each row is 1/4 of the board height
+
+    // Speed in rows per second. It rises a little with every point: 1.2 at the
+    // start, 4.0 at a score of 100 (genuinely hard), and it tops out at 6.
+    const START_SPEED = 1.2;
+    const SPEED_PER_POINT = 0.028;
+    const MAX_SPEED = 6;
+
+    const GAME_OVER_SCREEN_DELAY = 1000;  // ms to show the red tile first
+    const POINTS_PER_TINT = 50;           // background tint changes this often
+
+    // Hold tiles: none before HOLD_MIN_SCORE, then about 1 row in 8,
+    // rising slowly with the score up to 1 in 4. Heights are in rows.
+    const HOLD_MIN_SCORE = 15;
+    const HOLD_CHANCE = 1 / 8;
+    const HOLD_CHANCE_PER_POINT = 1 / 800;
+    const HOLD_MAX_CHANCE = 1 / 4;
+    const HOLD_HEIGHTS = [2, 2.5, 3, 3.5, 4];
+    const HOLD_FULL_BONUS = 2;            // extra points for holding to the end
+    const HOLD_GAP_SECONDS = 0.3;         // empty space after a hold tile, in time
+    const BEST_SCORE_KEY = 'tileTunes.bestScore';
+    const SONG_KEY = 'tileTunes.song';
+
+    // ---- Elements ----
+    const game = document.getElementById('game');
+    const tileLayer = document.getElementById('tiles');
+    const scoreEl = document.getElementById('score');
+    const startBestEl = document.getElementById('start-best');
+    const gameOverEl = document.getElementById('game-over');
+    const finalScoreEl = document.getElementById('final-score');
+    const newBestEl = document.getElementById('new-best');
+    const gameOverBestEl = document.getElementById('game-over-best');
+    const restartBtn = document.getElementById('restart-btn');
+    const flashEl = document.getElementById('flash');
+    const bgTints = document.querySelectorAll('.bg-tint');
+    const songButtonsEl = document.getElementById('song-buttons');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    // ---- State ----
+    // Positions are measured in rows, not pixels: y = 0 means the row's top edge
+    // is at the top of the board, y = 3 means it sits at the bottom. Because a
+    // tile is exactly one row tall, translateY(y * 100%) places it correctly at
+    // any screen size, so resizing needs no extra handling.
+    let state = 'ready';      // 'ready' | 'playing' | 'over'
+    let rows = [];            // ordered bottom (oldest) to top (newest)
+    let wrongCell = null;     // white cell tapped by mistake: { lane, y, el }
+    let score = 0;
+    let bestScore = loadBestScore();
+    let lastTime = null;
+    let gameOverTimer = null;
+    let currentTint = 0;
+    const holds = new Map();  // pointerId -> hold row being held by that pointer
+
+    // ---- Saved data (localStorage can be unavailable, e.g. private mode) ----
+    function loadBestScore() {
+      try {
+        const saved = parseInt(localStorage.getItem(BEST_SCORE_KEY), 10);
+        return Number.isFinite(saved) && saved > 0 ? saved : 0;
+      } catch (err) {
+        return 0;
+      }
+    }
+
+    function saveBestScore(value) {
+      try {
+        localStorage.setItem(BEST_SCORE_KEY, String(value));
+      } catch (err) {
+        // Not saved; the best score still lasts for this visit
+      }
+    }
+
+    function loadSongName() {
+      try {
+        return localStorage.getItem(SONG_KEY);
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function saveSongName(name) {
+      try {
+        localStorage.setItem(SONG_KEY, name);
+      } catch (err) {
+        // Not saved; the choice still lasts for this visit
+      }
+    }
+
+    let selectedSong =
+      SONGS.find(song => song.name === loadSongName()) ||
+      SONGS.find(song => song.name === DEFAULT_SONG);
+
+    // ---- Sound ----
+    const NOTE_OFFSETS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+    // Note names split once per song, e.g. 'C5 D#5' -> ['C5', 'D#5']
+    const songNotes = new Map(SONGS.map(song => [song, song.notes.trim().split(/\s+/)]));
+
+    let audioCtx = null;
+    let masterGain = null;
+    let melodyIndex = 0;
+
+    // Browsers only allow audio after a user gesture, so this is called from
+    // the tap handlers. It creates the audio context the first time and
+    // resumes it if the browser has suspended it.
+    function unlockAudio() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioCtx = new AudioContextClass();
+
+        // Master volume, then a compressor so overlapping notes never clip
+        const compressor = audioCtx.createDynamicsCompressor();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.6;
+        masterGain.connect(compressor);
+        compressor.connect(audioCtx.destination);
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    // 'C5' -> 523.25 Hz, 'D#5' -> 622.25 Hz, 'Bb4' -> 466.16 Hz
+    function noteToFrequency(name) {
+      const match = /^([A-G])([#b]?)(\d)$/.exec(name);
+      if (!match) return 440;
+      const accidental = match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0;
+      const midi = 12 * (Number(match[3]) + 1) + NOTE_OFFSETS[match[1]] + accidental;
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    // A soft, piano-like note: a warm triangle wave plus a quiet octave
+    // overtone, a quick attack, a long natural fade, and a low-pass filter
+    // that closes as the note decays (real strings lose brightness first).
+    function playPianoNote(frequency) {
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      const duration = 1.6;
+
+      const envelope = audioCtx.createGain();
+      envelope.gain.setValueAtTime(0, t);
+      envelope.gain.linearRampToValueAtTime(0.4, t + 0.008);
+      envelope.gain.exponentialRampToValueAtTime(0.12, t + 0.3);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 0.5;
+      filter.frequency.setValueAtTime(frequency * 8, t);
+      filter.frequency.exponentialRampToValueAtTime(frequency * 2, t + 0.6);
+
+      const fundamental = audioCtx.createOscillator();
+      fundamental.type = 'triangle';
+      fundamental.frequency.value = frequency;
+
+      // The octave overtone fades faster than the main tone
+      const overtone = audioCtx.createOscillator();
+      overtone.type = 'sine';
+      overtone.frequency.value = frequency * 2;
+      const overtoneGain = audioCtx.createGain();
+      overtoneGain.gain.setValueAtTime(0.3, t);
+      overtoneGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+
+      fundamental.connect(filter);
+      overtone.connect(overtoneGain);
+      overtoneGain.connect(filter);
+      filter.connect(envelope);
+      envelope.connect(masterGain);
+
+      fundamental.start(t);
+      overtone.start(t);
+      fundamental.stop(t + duration + 0.05);
+      overtone.stop(t + duration + 0.05);
+    }
+
+    // The same piano note, held: it sustains with a gentle fade until
+    // release() is called (or it fades out on its own after several seconds)
+    function startHeldNote(frequency) {
+      if (!audioCtx) return null;
+      const t = audioCtx.currentTime;
+
+      const envelope = audioCtx.createGain();
+      envelope.gain.setValueAtTime(0, t);
+      envelope.gain.linearRampToValueAtTime(0.4, t + 0.008);
+      envelope.gain.exponentialRampToValueAtTime(0.14, t + 0.3);
+      envelope.gain.setTargetAtTime(0.03, t + 0.3, 1.5);
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 0.5;
+      filter.frequency.setValueAtTime(frequency * 8, t);
+      filter.frequency.exponentialRampToValueAtTime(frequency * 2, t + 0.6);
+
+      const fundamental = audioCtx.createOscillator();
+      fundamental.type = 'triangle';
+      fundamental.frequency.value = frequency;
+
+      const overtone = audioCtx.createOscillator();
+      overtone.type = 'sine';
+      overtone.frequency.value = frequency * 2;
+      const overtoneGain = audioCtx.createGain();
+      overtoneGain.gain.setValueAtTime(0.3, t);
+      overtoneGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+
+      fundamental.connect(filter);
+      overtone.connect(overtoneGain);
+      overtoneGain.connect(filter);
+      filter.connect(envelope);
+      envelope.connect(masterGain);
+
+      fundamental.start(t);
+      overtone.start(t);
+      fundamental.stop(t + 10);
+      overtone.stop(t + 10);
+
+      return {
+        release() {
+          const now = audioCtx.currentTime;
+          envelope.gain.cancelScheduledValues(now);
+          envelope.gain.setValueAtTime(envelope.gain.value, now);
+          envelope.gain.setTargetAtTime(0, now, 0.12);
+          fundamental.stop(now + 0.8);
+          overtone.stop(now + 0.8);
+        }
+      };
+    }
+
+    function nextMelodyFrequency() {
+      const notes = songNotes.get(selectedSong);
+      const frequency = noteToFrequency(notes[melodyIndex]);
+      melodyIndex = (melodyIndex + 1) % notes.length;  // loop back at the end
+      return frequency;
+    }
+
+    function playNextMelodyNote() {
+      playPianoNote(nextMelodyFrequency());
+    }
+
+    // Short, low, slightly clashing buzz that sags in pitch
+    function playWrongSound() {
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      const duration = 0.5;
+
+      const envelope = audioCtx.createGain();
+      envelope.gain.setValueAtTime(0, t);
+      envelope.gain.linearRampToValueAtTime(0.35, t + 0.01);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 700;
+
+      for (const frequency of [98, 104]) {  // two close pitches clash
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(frequency, t);
+        osc.frequency.exponentialRampToValueAtTime(frequency * 0.8, t + duration);
+        osc.connect(filter);
+        osc.start(t);
+        osc.stop(t + duration + 0.05);
+      }
+
+      filter.connect(envelope);
+      envelope.connect(masterGain);
+    }
+
+    // ---- Song picker (start screen) ----
+    function buildSongButtons() {
+      for (const song of SONGS) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        const name = document.createElement('span');
+        name.className = 'song-name';
+        name.textContent = song.name;
+        const meta = document.createElement('span');
+        meta.className = 'song-meta';
+        meta.textContent = song.composer;
+        button.append(name, meta);
+        button.songData = song;
+        button.addEventListener('click', () => selectSong(song));
+        songButtonsEl.appendChild(button);
+      }
+    }
+
+    function updatePicker() {
+      for (const button of songButtonsEl.children) {
+        button.setAttribute('aria-pressed', button.songData === selectedSong);
+      }
+    }
+
+    function selectSong(song) {
+      selectedSong = song;
+      melodyIndex = 0;
+      updatePicker();
+      saveSongName(song.name);
+    }
+
+    // ---- Effects (Web Animations API, transform and opacity only) ----
+    let scorePop = null;
+
+    function popScore() {
+      if (reducedMotion.matches) return;
+      if (scorePop) scorePop.cancel();  // restart cleanly on fast taps
+      scorePop = scoreEl.animate(
+        [
+          { transform: 'scale(1)' },
+          { transform: 'scale(1.3)', offset: 0.35 },
+          { transform: 'scale(1)' }
+        ],
+        { duration: 180, easing: 'ease-out' }
+      );
+    }
+
+    function setBackgroundTint(index) {
+      bgTints.forEach((el, i) => el.classList.toggle('active', i === index));
+    }
+
+    function shakeAndFlash() {
+      flashEl.animate(
+        [{ opacity: 0 }, { opacity: 0.35, offset: 0.2 }, { opacity: 0 }],
+        { duration: 450, easing: 'ease-out' }
+      );
+      if (reducedMotion.matches) return;
+      game.animate(
+        [
+          { transform: 'translateX(0)' },
+          { transform: 'translateX(-10px)' },
+          { transform: 'translateX(9px)' },
+          { transform: 'translateX(-7px)' },
+          { transform: 'translateX(5px)' },
+          { transform: 'translateX(-2px)' },
+          { transform: 'translateX(0)' }
+        ],
+        { duration: 380, easing: 'ease-out' }
+      );
+    }
+
+    // ---- Spawning ----
+    // A row is one tile in one lane. Normal rows are 1 row tall; hold rows
+    // are taller (height in rows) and have no other tiles alongside them.
+    function spawnRow(y, height) {
+      const lane = Math.floor(Math.random() * LANES);
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.style.left = (lane * 100 / LANES) + '%';
+      const row = { y, lane, el, height, hold: height > 1, hit: false, missed: false };
+
+      if (row.hold) {
+        el.classList.add('hold');
+        el.style.height = (height * 100 / ROWS_ON_SCREEN) + '%';
+        const strip = document.createElement('div');
+        strip.className = 'hold-strip';
+        const arrow = document.createElement('div');
+        arrow.className = 'hold-arrow';
+        row.fillEl = document.createElement('div');
+        row.fillEl.className = 'hold-fill';
+        row.glowEl = document.createElement('div');
+        row.glowEl.className = 'hold-glow';
+        el.append(strip, row.fillEl, arrow, row.glowEl);
+        Object.assign(row, { holding: false, fill: 0, startFill: 0, pressLine: 0, note: null, result: null });
+      }
+
+      tileLayer.appendChild(el);
+      rows.push(row);
+    }
+
+    function shouldSpawnHold() {
+      const last = rows[rows.length - 1];
+      if (!last || last.hold || score < HOLD_MIN_SCORE) return false;  // never two in a row
+      const chance = Math.min(HOLD_MAX_CHANCE, HOLD_CHANCE + (score - HOLD_MIN_SCORE) * HOLD_CHANCE_PER_POINT);
+      return Math.random() < chance;
+    }
+
+    // Keep adding rows above the topmost one until there is always a row
+    // waiting just above the visible area, so the screen never has gaps.
+    // With no rows yet, the first row fills the bottom of the board.
+    // After a hold tile, leave a short gap (a fixed time at the current
+    // speed) so the next tile can be reached comfortably after releasing.
+    function fillRows() {
+      let topY = rows.length ? rows[rows.length - 1].y : ROWS_ON_SCREEN;
+      while (topY > -1) {
+        if (shouldSpawnHold()) {
+          const height = HOLD_HEIGHTS[Math.floor(Math.random() * HOLD_HEIGHTS.length)];
+          topY -= height;
+          spawnRow(topY, height);
+        } else {
+          const last = rows[rows.length - 1];
+          if (last && last.hold) topY -= Math.max(1, currentSpeed() * HOLD_GAP_SECONDS);
+          topY -= 1;
+          spawnRow(topY, 1);
+        }
+      }
+    }
+
+    // The only tile the player is allowed to tap next
+    function lowestUnhitRow() {
+      return rows.find(row => !row.hit);
+    }
+
+    // ---- Updating ----
+    function currentSpeed() {
+      return Math.min(MAX_SPEED, START_SPEED + score * SPEED_PER_POINT);
+    }
+
+    function update(dt) {
+      const speed = currentSpeed();
+      for (const row of rows) {
+        row.y += speed * dt;
+      }
+
+      // An unhit tile has started to leave the bottom: game over. Shift the
+      // board back so the missed tile is fully visible when it turns red.
+      const target = lowestUnhitRow();
+      if (target && target.y + target.height > ROWS_ON_SCREEN) {
+        const overshoot = target.y + target.height - ROWS_ON_SCREEN;
+        for (const row of rows) row.y -= overshoot;
+        target.missed = true;
+        gameOver();
+        return;
+      }
+
+      // Held tiles fill up as they slide down; full once the top reaches the finger
+      for (const row of holds.values()) {
+        row.fill = holdFill(row);
+        if (row.fill >= 1) finishHold(row, true);
+      }
+
+      // Remove rows that have scrolled fully off the bottom
+      while (rows.length && rows[0].y >= ROWS_ON_SCREEN) {
+        rows[0].el.remove();
+        rows.shift();
+      }
+
+      fillRows();
+    }
+
+    function addPoints(points) {
+      score += points;
+      scoreEl.textContent = score;
+      popScore();
+      // Checked by range, not exact multiple, so bonus points can't skip it
+      const tint = Math.floor(score / POINTS_PER_TINT) % bgTints.length;
+      if (tint !== currentTint) {
+        currentTint = tint;
+        setBackgroundTint(tint);
+      }
+    }
+
+    function hitRow(row) {
+      row.hit = true;
+      row.el.textContent = '';
+      row.el.classList.remove('start-tile');
+      addPoints(1);
+      playNextMelodyNote();
+    }
+
+    // ---- Hold tiles ----
+    // How much of the tile has slid below the finger, from 0 to 1
+    function holdFill(row) {
+      return Math.min(1, Math.max(0, (row.y + row.height - row.pressLine) / row.height));
+    }
+
+    // Pressing the bottom of a hold tile counts as hitting it (1 point, like
+    // a normal tile) and starts the held note
+    function startHold(row, pointerId, rowPos) {
+      row.hit = true;
+      row.holding = true;
+      row.pressLine = rowPos;
+      row.fill = row.startFill = holdFill(row);
+      row.pointerId = pointerId;
+      holds.set(pointerId, row);
+      try { game.setPointerCapture(pointerId); } catch (err) { /* pointer already gone */ }
+      addPoints(1);
+      row.note = startHeldNote(nextMelodyFrequency());
+    }
+
+    // Held to the end: +2 with a glow and a "+2" pop. Released early: no
+    // game over, the tile turns grey and scores up to 1 extra point for the
+    // share of it that was held.
+    function finishHold(row, full) {
+      if (!row.holding) return;
+      row.holding = false;
+      holds.delete(row.pointerId);
+      if (row.note) row.note.release();
+
+      if (full) {
+        row.fill = 1;
+        row.result = 'full';
+        addPoints(HOLD_FULL_BONUS);
+        showBonus(row, HOLD_FULL_BONUS);
+        row.glowEl.animate([{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }],
+          { duration: 500, easing: 'ease-out' });
+      } else {
+        row.result = 'partial';
+        const progress = (row.fill - row.startFill) / (1 - row.startFill || 1);
+        const bonus = Math.floor(progress * HOLD_FULL_BONUS);
+        if (bonus > 0) {
+          addPoints(bonus);
+          showBonus(row, bonus);
+        }
+      }
+    }
+
+    // A "+2" that rises and fades just above where the finger was
+    function showBonus(row, points) {
+      const el = document.createElement('div');
+      el.className = 'bonus-pop';
+      el.textContent = '+' + points;
+      el.style.left = (row.lane * 100 / LANES) + '%';
+      el.style.top = (Math.max(0, row.pressLine - 0.9) * 100 / ROWS_ON_SCREEN) + '%';
+      tileLayer.appendChild(el);
+      const pop = el.animate(
+        [
+          { transform: 'translateY(0) scale(0.8)', opacity: 0 },
+          { transform: 'translateY(-12px) scale(1.1)', opacity: 1, offset: 0.2 },
+          { transform: 'translateY(-60px) scale(1)', opacity: 0 }
+        ],
+        { duration: 750, easing: 'ease-out' }
+      );
+      pop.onfinish = () => el.remove();
+    }
+
+    function releaseAllHolds() {
+      for (const row of [...holds.values()]) {
+        row.holding = false;
+        if (row.note) row.note.release();
+      }
+      holds.clear();
+    }
+
+    function laneAt(clientX) {
+      const rect = game.getBoundingClientRect();
+      return Math.floor((clientX - rect.left) / rect.width * LANES);
+    }
+
+    // Lifting the finger, the browser cancelling the touch, or the pointer
+    // leaving the tile's lane all count as letting go
+    function handlePointerEnd(e) {
+      const row = holds.get(e.pointerId);
+      if (row) finishHold(row, false);
+    }
+
+    function handlePointerMove(e) {
+      const row = holds.get(e.pointerId);
+      if (row && laneAt(e.clientX) !== row.lane) finishHold(row, false);
+    }
+
+    // ---- Input ----
+    function handleTap(e) {
+      if (e.target.closest('button')) return;  // let buttons work normally
+      e.preventDefault();
+      unlockAudio();
+      if (state === 'over') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;  // left click only
+
+      // Convert the tap into a lane and a position in row units
+      const rect = game.getBoundingClientRect();
+      const lane = Math.floor((e.clientX - rect.left) / rect.width * LANES);
+      const rowPos = (e.clientY - rect.top) / rect.height * ROWS_ON_SCREEN;
+      const row = rows.find(r => rowPos >= r.y && rowPos < r.y + r.height);
+      if (!row || lane < 0 || lane >= LANES) return;  // includes the gap after a hold tile
+
+      // Before the game starts, only the Start tile responds
+      if (state === 'ready') {
+        if (row === rows[0] && row.lane === lane) {
+          hitRow(row);
+          startGame();
+        }
+        return;
+      }
+
+      if (row.lane === lane) {
+        // Tapped a black (or already grey) tile. Only the lowest unhit one
+        // counts; taps on grey tiles or tiles further up are ignored.
+        // A hold tile has to be pressed on its bottom part.
+        if (row === lowestUnhitRow()) {
+          if (!row.hold) {
+            hitRow(row);
+          } else if (rowPos >= row.y + row.height - 1) {
+            startHold(row, e.pointerId, rowPos);
+          }
+        }
+        return;
+      }
+
+      // Tapped a white area (beside a hold tile, the red cell is drawn
+      // around the tap)
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.style.left = (lane * 100 / LANES) + '%';
+      tileLayer.appendChild(el);
+      const cellY = Math.min(Math.max(rowPos - 0.5, row.y), row.y + row.height - 1);
+      wrongCell = { lane, y: cellY, el };
+      gameOver();
+    }
+
+    // ---- Drawing ----
+    function draw() {
+      for (const row of rows) {
+        // translateY % is relative to the tile's own height, so divide by it
+        row.el.style.transform = 'translateY(' + (row.y / row.height * 100) + '%)';
+        row.el.classList.toggle('wrong', row.missed);
+        if (row.hold) {
+          row.fillEl.style.transform = 'scaleY(' + row.fill + ')';
+          row.el.classList.toggle('hold-full', row.result === 'full');
+          row.el.classList.toggle('hold-partial', row.result === 'partial');
+        } else {
+          row.el.classList.toggle('hit', row.hit);
+        }
+      }
+      if (wrongCell) {
+        wrongCell.el.style.transform = 'translateY(' + (wrongCell.y * 100) + '%)';
+        wrongCell.el.classList.add('wrong');
+      }
+    }
+
+    // ---- Game flow: ready -> playing -> over -> ready ----
+    function setState(newState) {
+      state = newState;
+      game.dataset.state = newState;
+    }
+
+    // Fresh board with the Start tile at the bottom and the start screen shown
+    function resetToStartScreen() {
+      clearTimeout(gameOverTimer);
+      releaseAllHolds();
+      tileLayer.innerHTML = '';
+      rows = [];
+      wrongCell = null;
+      score = 0;
+      melodyIndex = 0;
+      scoreEl.textContent = '0';
+      currentTint = 0;
+      setBackgroundTint(0);
+      startBestEl.textContent = bestScore;
+      gameOverEl.classList.remove('visible');
+
+      fillRows();
+      const startRow = rows[0];
+      startRow.el.textContent = 'Start';
+      startRow.el.classList.add('start-tile');
+
+      setState('ready');
+      draw();
+    }
+
+    function startGame() {
+      setState('playing');
+      lastTime = null;
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver() {
+      setState('over');  // the loop stops scheduling new frames
+      releaseAllHolds();
+      draw();
+      shakeAndFlash();
+      playWrongSound();
+
+      const isNewBest = score > bestScore;
+      if (isNewBest) {
+        bestScore = score;
+        saveBestScore(bestScore);
+      }
+      finalScoreEl.textContent = score;
+      gameOverBestEl.textContent = bestScore;
+      newBestEl.classList.toggle('visible', isNewBest);
+
+      // Let the red tile flash before covering the board
+      gameOverTimer = setTimeout(() => {
+        gameOverEl.classList.add('visible');
+        restartBtn.focus({ preventScroll: true });
+      }, GAME_OVER_SCREEN_DELAY);
+    }
+
+    // ---- Game loop ----
+    function loop(time) {
+      if (state !== 'playing') return;
+      if (lastTime === null) lastTime = time;
+      // Cap the step so switching tabs and coming back doesn't cause a big jump
+      const dt = Math.min((time - lastTime) / 1000, 0.1);
+      lastTime = time;
+
+      update(dt);
+      if (state !== 'playing') return;
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // ---- Page setup ----
+    game.addEventListener('pointerdown', handleTap);
+    // On touch screens some browsers (e.g. Chrome on Android) only count the
+    // finger lifting as a user gesture, so try to unlock audio then as well.
+    game.addEventListener('pointerup', unlockAudio);
+    game.addEventListener('touchend', unlockAudio);
+    // Hold tiles: release on lift, cancel, lost capture, or leaving the lane
+    game.addEventListener('pointerup', handlePointerEnd);
+    game.addEventListener('pointercancel', handlePointerEnd);
+    game.addEventListener('lostpointercapture', handlePointerEnd);
+    game.addEventListener('pointermove', handlePointerMove);
+    restartBtn.addEventListener('click', resetToStartScreen);
+
+    // Block the browser's own gestures: long-press menu, pinch zoom (iOS
+    // Safari ignores user-scalable=no) and any touch scrolling.
+    game.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('gesturestart', e => e.preventDefault());
+    document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+    buildSongButtons();
+    updatePicker();
+    resetToStartScreen();
+  </script>
+</body>
+</html>
