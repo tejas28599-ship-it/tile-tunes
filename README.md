@@ -1,28 +1,32 @@
 # Tile Tunes
 
-A small piano-tiles style browser game. Tap the black tiles as they scroll down and each one plays the next note of a song. It's plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, build tools or audio files. All sounds are generated with the Web Audio API.
+A small piano-tiles style game. Tap the black tiles as they scroll down, and each one plays the next note of a song.
+
+## Play on any device
+
+**▶ Play now: https://tejas28599-ship-it.github.io/tile-tunes/**
+
+You don't need to install anything. Tile Tunes runs in your browser on any device: phone, tablet or computer.
+
+1. Open the Tile Tunes link above.
+2. It opens in any browser on your phone, tablet or computer.
+3. Start playing! 🎵
+
+On iPhone, turn silent mode off to hear the music.
 
 ## How to play
 
-1. Open `index.html` in a browser. It works on phones (portrait) and desktop.
-2. Pick a song on the start screen: Ode to Joy, Für Elise or Twinkle Twinkle Little Star.
-3. Tap the black **Start** tile at the bottom to begin.
-4. Tap each black tile in order, starting with the lowest one. Every correct tap plays the next note of the song.
-5. **Hold tiles** (tall tiles with an arrow, from 15 points on): press the bottom of the tile and keep holding while the fill rises. Hold it to the end for +2 bonus points. Letting go early is safe but scores less.
-6. The game ends if you tap a white area or let a black tile scroll past the bottom. It gets faster as your score rises.
+1. Tap the black **Start** tile at the bottom.
+2. Tap each black tile in order, starting with the lowest one. Every tap plays the next note of the song.
+3. **Hold tiles** (tall tiles with an arrow) appear later: press the bottom and keep holding while it fills up. Hold to the end for +2 bonus points.
+4. The game ends if you tap a white space or miss a black tile. It gets faster as your score goes up.
 
-Your best score and chosen song are remembered in your browser.
+Want a different song? Tap **Change** on the start screen and pick Ode to Joy, Für Elise or Twinkle Twinkle Little Star.
 
-## Playing on a phone
+Your best score and song choice are saved on your device.
 
-Serve the folder from your computer and open it on a phone on the same Wi-Fi:
+## For developers
 
-```bash
-python3 -m http.server 8000
-```
-
-Then visit `http://<your-computer's-local-IP>:8000` on the phone.
-
-## Adding songs
+The whole game is plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, build tools or audio files. All sounds are generated with the Web Audio API.
 
 Songs live in the `SONGS` section at the top of the script in `index.html`, as note names separated by spaces (e.g. `'E5 D#5 E5 B4'`), one note per tap.
