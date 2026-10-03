@@ -255,6 +255,46 @@
       opacity: 1;
     }
 
+    /* ---- Tap and celebration effects (animated with transform/opacity) ---- */
+    #effects {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    /* Ring that bursts out from the exact spot of a correct tap */
+    .tap-ring {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      margin: -32px 0 0 -32px;
+      border: 3px solid rgba(255, 255, 255, 0.9);
+      border-radius: 50%;
+      opacity: 0;
+    }
+
+    /* Little music note that floats up from a correct tap */
+    .float-note {
+      position: absolute;
+      margin: -16px 0 0 -10px;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent);
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 8px #fff;
+      opacity: 0;
+    }
+
+    .confetti {
+      position: absolute;
+      width: 8px;
+      height: 12px;
+      margin: -6px 0 0 -4px;
+      border-radius: 2px;
+      opacity: 0;
+    }
+
     /* Theme name that fades in briefly when a milestone is reached */
     #theme-banner {
       position: absolute;
@@ -572,6 +612,7 @@
     <div class="lane" data-lane="2"></div>
     <div class="lane" data-lane="3"></div>
     <div id="tiles"></div>
+    <div id="effects" aria-hidden="true"></div>
     <div id="flash" aria-hidden="true"></div>
     <div id="theme-banner" aria-live="polite">
       <p id="theme-banner-name"></p>
@@ -689,6 +730,7 @@
     const themeBannerEl = document.getElementById('theme-banner');
     const themeBannerNameEl = document.getElementById('theme-banner-name');
     const themeBannerScoreEl = document.getElementById('theme-banner-score');
+    const effectsEl = document.getElementById('effects');
     const songButtonsEl = document.getElementById('song-buttons');
     const songToggleEl = document.getElementById('song-toggle');
     const currentSongEl = document.getElementById('current-song');
@@ -982,6 +1024,75 @@
       );
     }
 
+    // ---- Tap and celebration effects ----
+    // All effects are short-lived elements in the effects layer, animated
+    // with transform and opacity only, and removed when they finish.
+    const NOTE_GLYPHS = ['\u266A', '\u266B'];  // ♪ ♫
+    const CONFETTI_COLORS = ['#ffd54f', '#4fc3f7', '#ef5350', '#66bb6a', '#ba68c8'];
+
+    function spawnEffect(className, xPercent, yPercent, keyframes, options, text) {
+      const el = document.createElement('div');
+      el.className = className;
+      el.style.left = xPercent + '%';
+      el.style.top = yPercent + '%';
+      if (text) el.textContent = text;
+      effectsEl.appendChild(el);
+      el.animate(keyframes, options).onfinish = () => el.remove();
+      return el;
+    }
+
+    // A tiny vibration on phones that support it (not iPhone Safari)
+    function buzz(pattern) {
+      try {
+        if (navigator.vibrate) navigator.vibrate(pattern);
+      } catch (err) {
+        // Vibration isn't available; nothing to do
+      }
+    }
+
+    // Correct tap: a ring bursts from the finger and a note floats up
+    function tapEffects(clientX, clientY) {
+      buzz(10);
+      if (reducedMotion.matches) return;
+      const rect = game.getBoundingClientRect();
+      const x = (clientX - rect.left) / rect.width * 100;
+      const y = (clientY - rect.top) / rect.height * 100;
+      spawnEffect('tap-ring', x, y,
+        [{ transform: 'scale(0.3)', opacity: 0.9 }, { transform: 'scale(1.5)', opacity: 0 }],
+        { duration: 350, easing: 'ease-out' });
+      const drift = Math.round((Math.random() - 0.5) * 36);
+      spawnEffect('float-note', x, y,
+        [
+          { transform: 'translate(0, 0) scale(0.7)', opacity: 0 },
+          { transform: 'translate(' + drift / 3 + 'px, -20px) scale(1.1)', opacity: 1, offset: 0.2 },
+          { transform: 'translate(' + drift + 'px, -90px) scale(1)', opacity: 0 }
+        ],
+        { duration: 800, easing: 'ease-out' },
+        NOTE_GLYPHS[Math.floor(Math.random() * NOTE_GLYPHS.length)]);
+    }
+
+    // Confetti bursting out from the banner and falling, in the theme's
+    // accent colour mixed with a few bright ones
+    function confettiBurst(accent) {
+      if (reducedMotion.matches) return;
+      const colors = [accent, accent].concat(CONFETTI_COLORS);
+      for (let i = 0; i < 28; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 70 + Math.random() * 110;
+        const dx = Math.cos(angle) * distance;
+        const dy = Math.sin(angle) * distance * 0.7 - 40;
+        const spin = Math.round((Math.random() - 0.5) * 720);
+        const piece = spawnEffect('confetti', 50, 24,
+          [
+            { transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
+            { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(' + spin / 2 + 'deg)', opacity: 1, offset: 0.45 },
+            { transform: 'translate(' + dx * 1.2 + 'px, ' + (dy + 160) + 'px) rotate(' + spin + 'deg)', opacity: 0 }
+          ],
+          { duration: 1100 + Math.random() * 500, easing: 'cubic-bezier(0.2, 0.7, 0.4, 1)' });
+        piece.style.background = colors[i % colors.length];
+      }
+    }
+
     // ---- Milestone themes ----
     // One background layer per theme; switching crossfades their opacity
     function buildThemeLayers() {
@@ -1004,7 +1115,11 @@
       currentTheme = index;
       [...backgroundsEl.children].forEach((el, i) => el.classList.toggle('active', i === index));
       game.style.setProperty('--accent', THEMES[index].accent);
-      if (announce) showThemeBanner(THEMES[index]);
+      if (announce) {
+        showThemeBanner(THEMES[index]);
+        confettiBurst(THEMES[index].accent);
+        buzz([20, 40, 20]);
+      }
     }
 
     // The new theme's name fades in near the top of the board, then away
@@ -1191,6 +1306,7 @@
         showBonus(row, HOLD_FULL_BONUS);
         row.glowEl.animate([{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }],
           { duration: 500, easing: 'ease-out' });
+        buzz(25);
       } else {
         row.result = 'partial';
         const progress = (row.fill - row.startFill) / (1 - row.startFill || 1);
@@ -1265,6 +1381,7 @@
       if (state === 'ready') {
         if (row === rows[0] && row.lane === lane) {
           hitRow(row);
+          tapEffects(e.clientX, e.clientY);
           startGame();
         }
         return;
@@ -1277,8 +1394,10 @@
         if (row === lowestUnhitRow()) {
           if (!row.hold) {
             hitRow(row);
+            tapEffects(e.clientX, e.clientY);
           } else if (rowPos >= row.y + row.height - 1) {
             startHold(row, e.pointerId, rowPos);
+            tapEffects(e.clientX, e.clientY);
           }
         }
         return;
@@ -1326,6 +1445,7 @@
       clearTimeout(gameOverTimer);
       releaseAllHolds();
       tileLayer.innerHTML = '';
+      effectsEl.innerHTML = '';
       rows = [];
       wrongCell = null;
       score = 0;
@@ -1359,6 +1479,7 @@
       releaseAllHolds();
       draw();
       shakeAndFlash();
+      buzz([70, 50, 90]);
       playWrongSound();
 
       const isNewBest = score > bestScore;
