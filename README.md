@@ -29,4 +29,4 @@ Your best score and song choice are saved on your device.
 
 The whole game is plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, build tools or audio files. All sounds are generated with the Web Audio API.
 
-Songs live in the `SONGS` section at the top of the script in `index.html`, as note names separated by spaces (e.g. `'E5 D#5 E5 B4'`), one note per tap.
+Songs live in the `SONGS` section at the top of the script in `index.html`, as note names separated by spaces (e.g. `'E5 D#5 E5 B4'`), one note per tile. Add `:2` or `:3` to a note to make it a long note (e.g. `'G5:2'`); long notes become hold tiles of that height.

@@ -581,31 +581,34 @@
     // =====================================================================
     // SONGS — add or edit songs here
     // =====================================================================
-    // Each song is a list of notes, one per correct tap; it loops when it
-    // runs out. Note names are a letter, an optional '#' (sharp) or 'b'
-    // (flat), and an octave: 'C5', 'D#5', 'Bb4'. All three melodies are in
-    // the public domain.
+    // Each song is a list of notes. The tiles are built from it in order,
+    // so each tile plays its own note; the song loops when it runs out.
+    // Note names are a letter, an optional '#' (sharp) or 'b' (flat), and an
+    // octave: 'C5', 'D#5', 'Bb4'. A plain note lasts one beat (one tile).
+    // ':2' or ':3' makes it a long note that lasts that many beats; long
+    // notes become hold tiles of that height, so the holds follow the rhythm
+    // of the song. All three melodies are in the public domain.
     const SONGS = [
       {
         name: 'Ode to Joy',
         composer: 'Beethoven',
-        notes: 'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5 D5 D5 ' +
-               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5 ' +
-               'D5 D5 E5 C5 D5 E5 F5 E5 C5 D5 E5 F5 E5 D5 C5 D5 G4 ' +
-               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5'
+        notes: 'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5 D5 D5:2 ' +
+               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5:2 ' +
+               'D5 D5 E5 C5 D5 E5 F5 E5 C5 D5 E5 F5 E5 D5 C5 D5 G4:2 ' +
+               'E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5 C5 C5:2'
       },
       {
         name: 'Für Elise',
         composer: 'Beethoven · opening theme',
-        notes: 'E5 D#5 E5 D#5 E5 B4 D5 C5 A4  C4 E4 A4 B4  E4 G#4 B4 C5 ' +
-               'E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4  C4 E4 A4 B4  E4 C5 B4 A4'
+        notes: 'E5 D#5 E5 D#5 E5 B4 D5 C5 A4:3  C4 E4 A4 B4:3  E4 G#4 B4 C5:3 ' +
+               'E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4:3  C4 E4 A4 B4:3  E4 C5 B4 A4:3'
       },
       {
         name: 'Twinkle Twinkle Little Star',
         composer: 'Traditional',
-        notes: 'C5 C5 G5 G5 A5 A5 G5  F5 F5 E5 E5 D5 D5 C5 ' +
-               'G5 G5 F5 F5 E5 E5 D5  G5 G5 F5 F5 E5 E5 D5 ' +
-               'C5 C5 G5 G5 A5 A5 G5  F5 F5 E5 E5 D5 D5 C5'
+        notes: 'C5 C5 G5 G5 A5 A5 G5:2  F5 F5 E5 E5 D5 D5 C5:2 ' +
+               'G5 G5 F5 F5 E5 E5 D5:2  G5 G5 F5 F5 E5 E5 D5:2 ' +
+               'C5 C5 G5 G5 A5 A5 G5:2  F5 F5 E5 E5 D5 D5 C5:2'
       }
     ];
     const DEFAULT_SONG = 'Ode to Joy';
@@ -627,15 +630,10 @@
     const GAME_OVER_SCREEN_DELAY = 1000;  // ms to show the red tile first
     const POINTS_PER_TINT = 50;           // background tint changes this often
 
-    // Hold tiles: none before HOLD_MIN_SCORE, then about 1 row in 8,
-    // rising slowly with the score up to 1 in 4. Heights are in rows.
+    // Hold tiles come from the song's long notes. Before HOLD_MIN_SCORE, long
+    // notes are played as normal tiles so the start of a game stays simple.
     const HOLD_MIN_SCORE = 15;
-    const HOLD_CHANCE = 1 / 8;
-    const HOLD_CHANCE_PER_POINT = 1 / 800;
-    const HOLD_MAX_CHANCE = 1 / 4;
-    const HOLD_HEIGHTS = [2, 2.5, 3, 3.5, 4];
     const HOLD_FULL_BONUS = 2;            // extra points for holding to the end
-    const HOLD_GAP_SECONDS = 0.3;         // empty space after a hold tile, in time
     const BEST_SCORE_KEY = 'tileTunes.bestScore';
     const SONG_KEY = 'tileTunes.song';
 
@@ -713,12 +711,16 @@
     // ---- Sound ----
     const NOTE_OFFSETS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
-    // Note names split once per song, e.g. 'C5 D#5' -> ['C5', 'D#5']
-    const songNotes = new Map(SONGS.map(song => [song, song.notes.trim().split(/\s+/)]));
+    // Notes parsed once per song, e.g. 'C5 G5:2' ->
+    // [{ name: 'C5', beats: 1 }, { name: 'G5', beats: 2 }]
+    const songNotes = new Map(SONGS.map(song => [song, song.notes.trim().split(/\s+/).map(token => {
+      const [name, beats] = token.split(':');
+      return { name, beats: Number(beats) || 1 };
+    })]));
 
     let audioCtx = null;
     let masterGain = null;
-    let melodyIndex = 0;
+    let nextNoteIndex = 0;    // the song note the next spawned tile will play
 
     // Browsers only allow audio after a user gesture, so this is called from
     // the tap handlers. It creates the audio context the first time and
@@ -832,27 +834,27 @@
       fundamental.stop(t + 10);
       overtone.stop(t + 10);
 
+      // ringOut: let the note die away naturally (held to the end), so it
+      // flows into the next note; otherwise stop it quickly (let go early)
       return {
-        release() {
+        release(ringOut) {
           const now = audioCtx.currentTime;
+          const fade = ringOut ? 0.35 : 0.12;
           envelope.gain.cancelScheduledValues(now);
           envelope.gain.setValueAtTime(envelope.gain.value, now);
-          envelope.gain.setTargetAtTime(0, now, 0.12);
-          fundamental.stop(now + 0.8);
-          overtone.stop(now + 0.8);
+          envelope.gain.setTargetAtTime(0, now, fade);
+          fundamental.stop(now + fade * 7);
+          overtone.stop(now + fade * 7);
         }
       };
     }
 
-    function nextMelodyFrequency() {
+    // The next note of the song for a new tile; loops back at the end
+    function nextSongNote() {
       const notes = songNotes.get(selectedSong);
-      const frequency = noteToFrequency(notes[melodyIndex]);
-      melodyIndex = (melodyIndex + 1) % notes.length;  // loop back at the end
-      return frequency;
-    }
-
-    function playNextMelodyNote() {
-      playPianoNote(nextMelodyFrequency());
+      const note = notes[nextNoteIndex];
+      nextNoteIndex = (nextNoteIndex + 1) % notes.length;
+      return note;
     }
 
     // Short, low, slightly clashing buzz that sags in pitch
@@ -919,10 +921,9 @@
 
     function selectSong(song) {
       selectedSong = song;
-      melodyIndex = 0;
       updatePicker();
       saveSongName(song.name);
-      setSongListOpen(false);
+      resetToStartScreen();  // rebuild the tiles from the new song (closes the list)
     }
 
     // ---- Effects (Web Animations API, transform and opacity only) ----
@@ -969,15 +970,16 @@
     // A row is one tile in one lane. Normal rows are 1 row tall; hold rows
     // are taller (height in rows) and have no other tiles alongside them.
     // A row never uses the same lane as the row below it, so two tiles can
-    // never touch and look like one tall tile.
-    function spawnRow(y, height) {
+    // never touch and look like one tall tile. Each row carries the
+    // frequency of the song note it plays.
+    function spawnRow(y, height, frequency) {
       const below = rows[rows.length - 1];
       let lane = Math.floor(Math.random() * (below ? LANES - 1 : LANES));
       if (below && lane >= below.lane) lane += 1;  // skip the lane below
       const el = document.createElement('div');
       el.className = 'tile';
       el.style.left = (lane * 100 / LANES) + '%';
-      const row = { y, lane, el, height, hold: height > 1, hit: false, missed: false };
+      const row = { y, lane, el, height, frequency, hold: height > 1, hit: false, missed: false };
 
       if (row.hold) {
         el.classList.add('hold');
@@ -998,31 +1000,22 @@
       rows.push(row);
     }
 
-    function shouldSpawnHold() {
-      const last = rows[rows.length - 1];
-      if (!last || last.hold || score < HOLD_MIN_SCORE) return false;  // never two in a row
-      const chance = Math.min(HOLD_MAX_CHANCE, HOLD_CHANCE + (score - HOLD_MIN_SCORE) * HOLD_CHANCE_PER_POINT);
-      return Math.random() < chance;
-    }
-
     // Keep adding rows above the topmost one until there is always a row
     // waiting just above the visible area, so the screen never has gaps.
     // With no rows yet, the first row fills the bottom of the board.
-    // After a hold tile, leave a short gap (a fixed time at the current
-    // speed) so the next tile can be reached comfortably after releasing.
+    // Rows follow the song note by note: a long note becomes a hold tile as
+    // tall as the note is long, and the next note sits right on top of it,
+    // so the next tap lands exactly when the long note ends. Early in the
+    // game, or straight after another hold, a long note is a normal tile.
     function fillRows() {
       let topY = rows.length ? rows[rows.length - 1].y : ROWS_ON_SCREEN;
       while (topY > -1) {
-        if (shouldSpawnHold()) {
-          const height = HOLD_HEIGHTS[Math.floor(Math.random() * HOLD_HEIGHTS.length)];
-          topY -= height;
-          spawnRow(topY, height);
-        } else {
-          const last = rows[rows.length - 1];
-          if (last && last.hold) topY -= Math.max(1, currentSpeed() * HOLD_GAP_SECONDS);
-          topY -= 1;
-          spawnRow(topY, 1);
-        }
+        const note = nextSongNote();
+        const last = rows[rows.length - 1];
+        const asHold = note.beats > 1 && score >= HOLD_MIN_SCORE && !(last && last.hold);
+        const height = asHold ? note.beats : 1;
+        topY -= height;
+        spawnRow(topY, height, noteToFrequency(note.name));
       }
     }
 
@@ -1085,7 +1078,7 @@
       row.el.textContent = '';
       row.el.classList.remove('start-tile');
       addPoints(1);
-      playNextMelodyNote();
+      playPianoNote(row.frequency);
     }
 
     // ---- Hold tiles ----
@@ -1105,7 +1098,7 @@
       holds.set(pointerId, row);
       try { game.setPointerCapture(pointerId); } catch (err) { /* pointer already gone */ }
       addPoints(1);
-      row.note = startHeldNote(nextMelodyFrequency());
+      row.note = startHeldNote(row.frequency);
     }
 
     // Held to the end: +2 with a glow and a "+2" pop. Released early: no
@@ -1115,7 +1108,7 @@
       if (!row.holding) return;
       row.holding = false;
       holds.delete(row.pointerId);
-      if (row.note) row.note.release();
+      if (row.note) row.note.release(full);  // held to the end: let it ring into the next note
 
       if (full) {
         row.fill = 1;
@@ -1262,7 +1255,7 @@
       rows = [];
       wrongCell = null;
       score = 0;
-      melodyIndex = 0;
+      nextNoteIndex = 0;  // the Start tile plays the song's first note
       scoreEl.textContent = '0';
       currentTint = 0;
       setBackgroundTint(0);
