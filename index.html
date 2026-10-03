@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#ffffff">
   <title>Tile Tunes</title>
+  <!-- Installable, offline-ready app (see manifest.webmanifest and sw.js) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Tile Tunes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
     :root {
       --board-max-width: 420px;
@@ -1758,6 +1766,15 @@
     game.addEventListener('contextmenu', e => e.preventDefault());
     document.addEventListener('gesturestart', e => e.preventDefault());
     document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+    // Offline play: register the service worker. Browsers only allow this on
+    // https:// pages (like the published game) and on localhost.
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' ||
+        location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => { /* still playable online */ });
+      });
+    }
 
     buildThemeLayers();
     buildSongButtons();

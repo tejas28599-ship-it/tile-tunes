@@ -14,6 +14,8 @@ You don't need to install anything. Tile Tunes runs in your browser on any devic
 
 On iPhone, turn silent mode off to hear the music.
 
+**Play offline too:** after you've opened the game once, it works even without internet. Add it to your home screen (Share → *Add to Home Screen* on iPhone, or the browser menu → *Add to Home screen* on Android) to get an app icon that opens full-screen.
+
 ## How to play
 
 1. Tap the black **Start** tile at the bottom.
@@ -27,6 +29,6 @@ Your best score and song choice are saved on your device.
 
 ## For developers
 
-The whole game is plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, build tools or audio files. All sounds are generated with the Web Audio API.
+The game is plain HTML, CSS and JavaScript in `index.html`, with no frameworks, build tools or audio files. All sounds are generated with the Web Audio API. `sw.js` (service worker) and `manifest.webmanifest`, with the icon PNGs, make it installable and playable offline.
 
 Songs live in the `SONGS` section at the top of the script in `index.html`, as note names separated by spaces (e.g. `'E5 D#5 E5 B4'`), one note per tile. Add `:2` or `:3` to a note to make it a long note (e.g. `'G5:2'`); long notes become hold tiles of that height.
