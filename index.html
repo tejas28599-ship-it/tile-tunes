@@ -644,6 +644,35 @@
       outline-offset: 3px;
     }
 
+    /* Secondary action under Restart */
+    #share-btn {
+      min-width: 180px;
+      padding: 12px 28px;
+      border: 2px solid var(--tile-color);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #share-btn:active {
+      transform: scale(0.97);
+    }
+
+    #share-btn:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    #share-status {
+      min-height: 1.4em;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
     /* On wider screens, give the board a subtle edge so it reads as a phone-sized area */
     @media (min-width: 421px) {
       #game {
@@ -690,6 +719,8 @@
       <p id="new-best">New best!</p>
       <p class="best-line">Best <span id="game-over-best">0</span></p>
       <button id="restart-btn" type="button">Restart</button>
+      <button id="share-btn" type="button">Share score</button>
+      <p id="share-status" aria-live="polite"></p>
     </div>
   </main>
 
@@ -764,6 +795,7 @@
     const BEST_SCORE_KEY = 'tileTunes.bestScore';
     const SONG_KEY = 'tileTunes.song';
     const SONG_BESTS_KEY = 'tileTunes.songBests';
+    const GAME_URL = 'https://tejas28599-ship-it.github.io/tile-tunes/';
     const STAR_SCORES = [25, 50, 100];    // points needed for 1, 2 and 3 stars
 
     // ---- Elements ----
@@ -783,6 +815,8 @@
     const themeBannerScoreEl = document.getElementById('theme-banner-score');
     const effectsEl = document.getElementById('effects');
     const finalStarsEl = document.getElementById('final-stars');
+    const shareBtn = document.getElementById('share-btn');
+    const shareStatusEl = document.getElementById('share-status');
     const songButtonsEl = document.getElementById('song-buttons');
     const songToggleEl = document.getElementById('song-toggle');
     const currentSongEl = document.getElementById('current-song');
@@ -1568,6 +1602,7 @@
       applyTheme(0, false);
       startBestEl.textContent = bestScore;
       gameOverEl.classList.remove('visible');
+      shareStatusEl.textContent = '';
 
       fillRows();
       const startRow = rows[0];
@@ -1622,6 +1657,29 @@
       }, GAME_OVER_SCREEN_DELAY);
     }
 
+    // ---- Sharing ----
+    // Uses the phone's own share menu where available; otherwise copies the
+    // message to the clipboard (or shows it so it can be copied by hand)
+    function shareScore() {
+      const stars = starsFor(score);
+      const text = 'I scored ' + score + (stars ? ' ' + '\u2B50'.repeat(stars) : '') +
+        ' on "' + selectedSong.name + '" in Tile Tunes \uD83C\uDFB9 Can you beat me?';
+      shareStatusEl.textContent = '';
+      if (navigator.share) {
+        navigator.share({ title: 'Tile Tunes', text, url: GAME_URL })
+          .catch(() => { /* the player closed the share menu */ });
+        return;
+      }
+      const message = text + ' ' + GAME_URL;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(message)
+          .then(() => { shareStatusEl.textContent = 'Copied! Paste it anywhere to share.'; })
+          .catch(() => { shareStatusEl.textContent = message; });
+      } else {
+        shareStatusEl.textContent = message;
+      }
+    }
+
     // Earned stars pop in one after another on the game-over screen
     function popEarnedStars() {
       if (reducedMotion.matches) return;
@@ -1663,6 +1721,7 @@
     game.addEventListener('lostpointercapture', handlePointerEnd);
     game.addEventListener('pointermove', handlePointerMove);
     restartBtn.addEventListener('click', resetToStartScreen);
+    shareBtn.addEventListener('click', shareScore);
     songToggleEl.addEventListener('click', () => setSongListOpen(songButtonsEl.hidden));
 
     // Block the browser's own gestures: long-press menu, pinch zoom (iOS
