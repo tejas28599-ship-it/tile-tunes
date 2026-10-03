@@ -459,10 +459,11 @@
     }
 
     .song-list button {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      column-gap: 12px;
+      row-gap: 1px;
       width: 100%;
       padding: 9px 16px;
       border: 1.5px solid var(--lane-line);
@@ -559,6 +560,53 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* ---- Stars: 1 at 25 points, 2 at 50, 3 at 100 ---- */
+    .star {
+      color: #d4d4d4;
+    }
+
+    .star.earned {
+      color: #f2b600;
+    }
+
+    #final-stars {
+      display: flex;
+      gap: 6px;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    #final-stars .star {
+      display: inline-block;
+    }
+
+    /* Best stars and score for each song, on the right of its card */
+    .song-best {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      text-align: right;
+      line-height: 1.2;
+    }
+
+    .song-stars {
+      font-size: 15px;
+      letter-spacing: 1px;
+    }
+
+    .song-best-score {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .song-list button[aria-pressed="true"] .star:not(.earned) {
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .song-list button[aria-pressed="true"] .song-best-score {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
     #new-best {
       display: none;
       padding: 4px 12px;
@@ -638,6 +686,7 @@
     <div id="game-over" class="overlay" role="dialog" aria-label="Game over">
       <p class="overlay-label">Score</p>
       <p id="final-score">0</p>
+      <p id="final-stars" aria-label="0 stars"></p>
       <p id="new-best">New best!</p>
       <p class="best-line">Best <span id="game-over-best">0</span></p>
       <button id="restart-btn" type="button">Restart</button>
@@ -714,6 +763,8 @@
     const HOLD_FULL_BONUS = 2;            // extra points for holding to the end
     const BEST_SCORE_KEY = 'tileTunes.bestScore';
     const SONG_KEY = 'tileTunes.song';
+    const SONG_BESTS_KEY = 'tileTunes.songBests';
+    const STAR_SCORES = [25, 50, 100];    // points needed for 1, 2 and 3 stars
 
     // ---- Elements ----
     const game = document.getElementById('game');
@@ -731,6 +782,7 @@
     const themeBannerNameEl = document.getElementById('theme-banner-name');
     const themeBannerScoreEl = document.getElementById('theme-banner-score');
     const effectsEl = document.getElementById('effects');
+    const finalStarsEl = document.getElementById('final-stars');
     const songButtonsEl = document.getElementById('song-buttons');
     const songToggleEl = document.getElementById('song-toggle');
     const currentSongEl = document.getElementById('current-song');
@@ -750,6 +802,7 @@
     let lastTime = null;
     let gameOverTimer = null;
     let currentTheme = 0;
+    let notesHit = 0;         // song notes played this game (for "Song complete")
     const holds = new Map();  // pointerId -> hold row being held by that pointer
 
     // ---- Saved data (localStorage can be unavailable, e.g. private mode) ----
@@ -785,6 +838,26 @@
         // Not saved; the choice still lasts for this visit
       }
     }
+
+    // Best score per song, e.g. { 'Ode to Joy': 63 }
+    function loadSongBests() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SONG_BESTS_KEY));
+        return saved && typeof saved === 'object' ? saved : {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function saveSongBests(bests) {
+      try {
+        localStorage.setItem(SONG_BESTS_KEY, JSON.stringify(bests));
+      } catch (err) {
+        // Not saved; the bests still last for this visit
+      }
+    }
+
+    const songBests = loadSongBests();
 
     let selectedSong =
       SONGS.find(song => song.name === loadSongName()) ||
@@ -969,6 +1042,21 @@
     }
 
     // ---- Song picker (start screen) ----
+    function starsFor(points) {
+      return STAR_SCORES.filter(needed => points >= needed).length;
+    }
+
+    // Three star spans, the first `count` of them filled
+    function fillStars(container, count) {
+      container.innerHTML = '';
+      for (let i = 0; i < STAR_SCORES.length; i++) {
+        const star = document.createElement('span');
+        star.className = 'star' + (i < count ? ' earned' : '');
+        star.textContent = '\u2605';  // ★
+        container.appendChild(star);
+      }
+    }
+
     function buildSongButtons() {
       for (const song of SONGS) {
         const button = document.createElement('button');
@@ -979,7 +1067,14 @@
         const meta = document.createElement('span');
         meta.className = 'song-meta';
         meta.textContent = song.composer;
-        button.append(name, meta);
+        const best = document.createElement('span');
+        best.className = 'song-best';
+        button.starsEl = document.createElement('span');
+        button.starsEl.className = 'song-stars';
+        button.bestScoreEl = document.createElement('span');
+        button.bestScoreEl.className = 'song-best-score';
+        best.append(button.starsEl, document.createElement('br'), button.bestScoreEl);
+        button.append(name, meta, best);
         button.songData = song;
         button.addEventListener('click', () => selectSong(song));
         songButtonsEl.appendChild(button);
@@ -988,7 +1083,10 @@
 
     function updatePicker() {
       for (const button of songButtonsEl.children) {
+        const best = songBests[button.songData.name] || 0;
         button.setAttribute('aria-pressed', button.songData === selectedSong);
+        fillStars(button.starsEl, starsFor(best));
+        button.bestScoreEl.textContent = best ? 'Best ' + best : 'Not played';
       }
       currentSongEl.textContent = selectedSong.name;
     }
@@ -1116,16 +1214,16 @@
       [...backgroundsEl.children].forEach((el, i) => el.classList.toggle('active', i === index));
       game.style.setProperty('--accent', THEMES[index].accent);
       if (announce) {
-        showThemeBanner(THEMES[index]);
+        showBanner(THEMES[index].name, THEMES[index].from + ' points');
         confettiBurst(THEMES[index].accent);
         buzz([20, 40, 20]);
       }
     }
 
-    // The new theme's name fades in near the top of the board, then away
-    function showThemeBanner(theme) {
-      themeBannerNameEl.textContent = theme.name;
-      themeBannerScoreEl.textContent = theme.from + ' points';
+    // A title fades in near the top of the board, then away
+    function showBanner(title, subtitle) {
+      themeBannerNameEl.textContent = title;
+      themeBannerScoreEl.textContent = subtitle;
       const lift = reducedMotion.matches ? 0 : 10;
       themeBannerEl.animate(
         [
@@ -1268,6 +1366,20 @@
       row.el.classList.remove('start-tile');
       addPoints(1);
       playPianoNote(row.frequency);
+      noteHit();
+    }
+
+    // Every tile is one note of the song, so after as many hits as the song
+    // has notes, the player has played the whole song through
+    function noteHit() {
+      notesHit += 1;
+      const songLength = songNotes.get(selectedSong).length;
+      if (notesHit % songLength === 0) {
+        const laps = notesHit / songLength;
+        showBanner('Song complete! \uD83C\uDFB5', laps > 1 ? '\u00D7' + laps : 'Keep going!');
+        confettiBurst(THEMES[currentTheme].accent);
+        buzz([20, 40, 20]);
+      }
     }
 
     // ---- Hold tiles ----
@@ -1288,6 +1400,7 @@
       try { game.setPointerCapture(pointerId); } catch (err) { /* pointer already gone */ }
       addPoints(1);
       row.note = startHeldNote(row.frequency);
+      noteHit();
     }
 
     // Held to the end: +2 with a glow and a "+2" pop. Released early: no
@@ -1449,6 +1562,7 @@
       rows = [];
       wrongCell = null;
       score = 0;
+      notesHit = 0;
       nextNoteIndex = 0;  // the Start tile plays the song's first note
       scoreEl.textContent = '0';
       applyTheme(0, false);
@@ -1487,6 +1601,15 @@
         bestScore = score;
         saveBestScore(bestScore);
       }
+      if (score > (songBests[selectedSong.name] || 0)) {
+        songBests[selectedSong.name] = score;
+        saveSongBests(songBests);
+        updatePicker();
+      }
+      const stars = starsFor(score);
+      fillStars(finalStarsEl, stars);
+      finalStarsEl.setAttribute('aria-label', stars + (stars === 1 ? ' star' : ' stars'));
+
       finalScoreEl.textContent = score;
       gameOverBestEl.textContent = bestScore;
       newBestEl.classList.toggle('visible', isNewBest);
@@ -1494,8 +1617,24 @@
       // Let the red tile flash before covering the board
       gameOverTimer = setTimeout(() => {
         gameOverEl.classList.add('visible');
+        popEarnedStars();
         restartBtn.focus({ preventScroll: true });
       }, GAME_OVER_SCREEN_DELAY);
+    }
+
+    // Earned stars pop in one after another on the game-over screen
+    function popEarnedStars() {
+      if (reducedMotion.matches) return;
+      [...finalStarsEl.querySelectorAll('.star.earned')].forEach((star, i) => {
+        star.animate(
+          [
+            { transform: 'scale(0)', opacity: 0 },
+            { transform: 'scale(1.35)', opacity: 1, offset: 0.6 },
+            { transform: 'scale(1)', opacity: 1 }
+          ],
+          { duration: 380, delay: 250 + i * 220, easing: 'ease-out', fill: 'backwards' }
+        );
+      });
     }
 
     // ---- Game loop ----
