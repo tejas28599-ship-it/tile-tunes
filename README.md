@@ -21,7 +21,7 @@ On iPhone, turn silent mode off to hear the music.
 3. **Hold tiles** (tall tiles with an arrow) appear later: press the bottom and keep holding while it fills up. Hold to the end for +2 bonus points.
 4. The game ends if you tap a white space or miss a black tile. It gets faster as your score goes up.
 
-Want a different song? Tap **Change** on the start screen and pick Ode to Joy, Für Elise or Twinkle Twinkle Little Star.
+Want a different song? Tap **Change** on the start screen and pick from Ode to Joy, Für Elise, Twinkle Twinkle Little Star, Jingle Bells, Happy Birthday or Canon in D. Earn up to 3 stars per song: 25, 50 and 100 points.
 
 Your best score and song choice are saved on your device.
 

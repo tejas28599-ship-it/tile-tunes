@@ -458,6 +458,12 @@
       display: none;
     }
 
+    /* While the song list is open, make room for it on shorter phones */
+    #start-screen.picking .tagline,
+    #start-screen.picking .best-line {
+      display: none;
+    }
+
     .song-list button {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -746,7 +752,7 @@
       },
       {
         name: 'Für Elise',
-        composer: 'Beethoven · opening theme',
+        composer: 'Beethoven',
         notes: 'E5 D#5 E5 D#5 E5 B4 D5 C5 A4:3  C4 E4 A4 B4:3  E4 G#4 B4 C5:3 ' +
                'E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4:3  C4 E4 A4 B4:3  E4 C5 B4 A4:3'
       },
@@ -756,6 +762,27 @@
         notes: 'C5 C5 G5 G5 A5 A5 G5:2  F5 F5 E5 E5 D5 D5 C5:2 ' +
                'G5 G5 F5 F5 E5 E5 D5:2  G5 G5 F5 F5 E5 E5 D5:2 ' +
                'C5 C5 G5 G5 A5 A5 G5:2  F5 F5 E5 E5 D5 D5 C5:2'
+      },
+      {
+        name: 'Jingle Bells',
+        composer: 'Pierpont · chorus',
+        notes: 'E5 E5 E5:2  E5 E5 E5:2  E5 G5 C5 D5 E5:3 ' +
+               'F5 F5 F5 F5 F5 E5 E5 E5  E5 D5 D5 E5 D5:2 G5:2 ' +
+               'E5 E5 E5:2  E5 E5 E5:2  E5 G5 C5 D5 E5:3 ' +
+               'F5 F5 F5 F5 F5 E5 E5 E5  G5 G5 F5 D5 C5:3'
+      },
+      {
+        name: 'Happy Birthday',
+        composer: 'Traditional',
+        notes: 'G4 G4 A4 G4 C5 B4:2  G4 G4 A4 G4 D5 C5:2 ' +
+               'G4 G4 G5 E5 C5 B4 A4:2  F5 F5 E5 C5 D5 C5:3'
+      },
+      {
+        name: 'Canon in D',
+        composer: 'Pachelbel',
+        notes: 'F#5:2 E5:2 D5:2 C#5:2 B4:2 A4:2 B4:2 C#5:2 ' +
+               'D5 C#5 B4 A4 G4 F#4 G4 E4 ' +
+               'D5 F#5 A5 G5 F#5 D5 F#5 E5  D5 B4 D5 A4 G4 B4 A4 G4'
       }
     ];
     const DEFAULT_SONG = 'Ode to Joy';
@@ -818,6 +845,7 @@
     const shareBtn = document.getElementById('share-btn');
     const shareStatusEl = document.getElementById('share-status');
     const songButtonsEl = document.getElementById('song-buttons');
+    const startScreenEl = document.getElementById('start-screen');
     const songToggleEl = document.getElementById('song-toggle');
     const currentSongEl = document.getElementById('current-song');
     const songToggleActionEl = songToggleEl.querySelector('.song-toggle-action');
@@ -1129,6 +1157,7 @@
     // song is never presented as a required step before Start
     function setSongListOpen(open) {
       songButtonsEl.hidden = !open;
+      startScreenEl.classList.toggle('picking', open);
       songToggleEl.setAttribute('aria-expanded', open);
       songToggleActionEl.textContent = open ? 'Close' : 'Change';
     }
