@@ -968,8 +968,12 @@
     // ---- Spawning ----
     // A row is one tile in one lane. Normal rows are 1 row tall; hold rows
     // are taller (height in rows) and have no other tiles alongside them.
+    // A row never uses the same lane as the row below it, so two tiles can
+    // never touch and look like one tall tile.
     function spawnRow(y, height) {
-      const lane = Math.floor(Math.random() * LANES);
+      const below = rows[rows.length - 1];
+      let lane = Math.floor(Math.random() * (below ? LANES - 1 : LANES));
+      if (below && lane >= below.lane) lane += 1;  // skip the lane below
       const el = document.createElement('div');
       el.className = 'tile';
       el.style.left = (lane * 100 / LANES) + '%';
