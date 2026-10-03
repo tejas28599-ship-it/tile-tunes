@@ -8,7 +8,7 @@
   <style>
     :root {
       --board-max-width: 420px;
-      --lane-line: #e2e2e2;
+      --lane-line: rgba(0, 0, 0, 0.11);
       --board-bg: #ffffff;
       --page-bg: #f2f2f2;
       --tile-color: #111111;
@@ -237,7 +237,7 @@
       pointer-events: none;
     }
 
-    /* ---- Background tints (one layer per 50 points, crossfaded) ---- */
+    /* ---- Milestone themes: one background layer per theme, crossfaded ---- */
     #backgrounds {
       position: absolute;
       inset: 0;
@@ -253,6 +253,35 @@
 
     .bg-tint.active {
       opacity: 1;
+    }
+
+    /* Theme name that fades in briefly when a milestone is reached */
+    #theme-banner {
+      position: absolute;
+      top: 20%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #theme-banner-name {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--accent);
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 10px #fff;
+    }
+
+    #theme-banner-score {
+      margin-top: 2px;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text);
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff;
     }
 
     /* ---- Game-over red flash over the whole board ---- */
@@ -537,20 +566,17 @@
 </head>
 <body>
   <main id="game" data-state="ready" aria-label="Tile Tunes game board">
-    <div id="backgrounds" aria-hidden="true">
-      <div class="bg-tint active" style="background: #ffffff"></div>
-      <div class="bg-tint" style="background: #f1f6ff"></div>
-      <div class="bg-tint" style="background: #f1faf3"></div>
-      <div class="bg-tint" style="background: #f6f2ff"></div>
-      <div class="bg-tint" style="background: #fff6ec"></div>
-      <div class="bg-tint" style="background: #fff1f3"></div>
-    </div>
+    <div id="backgrounds" aria-hidden="true"></div>
     <div class="lane" data-lane="0"></div>
     <div class="lane" data-lane="1"></div>
     <div class="lane" data-lane="2"></div>
     <div class="lane" data-lane="3"></div>
     <div id="tiles"></div>
     <div id="flash" aria-hidden="true"></div>
+    <div id="theme-banner" aria-live="polite">
+      <p id="theme-banner-name"></p>
+      <p id="theme-banner-score"></p>
+    </div>
 
     <div id="score" aria-live="off">0</div>
 
@@ -628,7 +654,18 @@
     const MAX_SPEED = 6;
 
     const GAME_OVER_SCREEN_DELAY = 1000;  // ms to show the red tile first
-    const POINTS_PER_TINT = 50;           // background tint changes this often
+
+    // Milestone themes: the board changes look as the score passes each
+    // milestone (and starts on Classic each game). Tiles always stay black
+    // so they're easy to read; the background and accent colour change.
+    const THEMES = [
+      { from: 0,   name: 'Classic',  background: '#ffffff', accent: '#e53935' },
+      { from: 25,  name: 'Sunrise',  background: '#ffeedd', accent: '#ef6c00' },
+      { from: 50,  name: 'Ocean',    background: '#e1f0fd', accent: '#1e78d2' },
+      { from: 100, name: 'Forest',   background: '#e2f3e6', accent: '#2a8a4a' },
+      { from: 150, name: 'Twilight', background: '#ece6fd', accent: '#6f45e6' },
+      { from: 200, name: 'Golden',   background: '#fff3c4', accent: '#b07800' }
+    ];
 
     // Hold tiles come from the song's long notes. Before HOLD_MIN_SCORE, long
     // notes are played as normal tiles so the start of a game stays simple.
@@ -648,7 +685,10 @@
     const gameOverBestEl = document.getElementById('game-over-best');
     const restartBtn = document.getElementById('restart-btn');
     const flashEl = document.getElementById('flash');
-    const bgTints = document.querySelectorAll('.bg-tint');
+    const backgroundsEl = document.getElementById('backgrounds');
+    const themeBannerEl = document.getElementById('theme-banner');
+    const themeBannerNameEl = document.getElementById('theme-banner-name');
+    const themeBannerScoreEl = document.getElementById('theme-banner-score');
     const songButtonsEl = document.getElementById('song-buttons');
     const songToggleEl = document.getElementById('song-toggle');
     const currentSongEl = document.getElementById('current-song');
@@ -667,7 +707,7 @@
     let bestScore = loadBestScore();
     let lastTime = null;
     let gameOverTimer = null;
-    let currentTint = 0;
+    let currentTheme = 0;
     const holds = new Map();  // pointerId -> hold row being held by that pointer
 
     // ---- Saved data (localStorage can be unavailable, e.g. private mode) ----
@@ -942,8 +982,45 @@
       );
     }
 
-    function setBackgroundTint(index) {
-      bgTints.forEach((el, i) => el.classList.toggle('active', i === index));
+    // ---- Milestone themes ----
+    // One background layer per theme; switching crossfades their opacity
+    function buildThemeLayers() {
+      for (const theme of THEMES) {
+        const layer = document.createElement('div');
+        layer.className = 'bg-tint';
+        layer.style.background = theme.background;
+        backgroundsEl.appendChild(layer);
+      }
+    }
+
+    // The latest theme whose milestone the score has reached
+    function themeIndexFor(points) {
+      let index = 0;
+      THEMES.forEach((theme, i) => { if (points >= theme.from) index = i; });
+      return index;
+    }
+
+    function applyTheme(index, announce) {
+      currentTheme = index;
+      [...backgroundsEl.children].forEach((el, i) => el.classList.toggle('active', i === index));
+      game.style.setProperty('--accent', THEMES[index].accent);
+      if (announce) showThemeBanner(THEMES[index]);
+    }
+
+    // The new theme's name fades in near the top of the board, then away
+    function showThemeBanner(theme) {
+      themeBannerNameEl.textContent = theme.name;
+      themeBannerScoreEl.textContent = theme.from + ' points';
+      const lift = reducedMotion.matches ? 0 : 10;
+      themeBannerEl.animate(
+        [
+          { opacity: 0, transform: 'translateY(' + lift + 'px)' },
+          { opacity: 1, transform: 'translateY(0)', offset: 0.15 },
+          { opacity: 1, transform: 'translateY(0)', offset: 0.75 },
+          { opacity: 0, transform: 'translateY(' + -lift + 'px)' }
+        ],
+        { duration: 1800, easing: 'ease-out' }
+      );
     }
 
     function shakeAndFlash() {
@@ -1065,12 +1142,9 @@
       score += points;
       scoreEl.textContent = score;
       popScore();
-      // Checked by range, not exact multiple, so bonus points can't skip it
-      const tint = Math.floor(score / POINTS_PER_TINT) % bgTints.length;
-      if (tint !== currentTint) {
-        currentTint = tint;
-        setBackgroundTint(tint);
-      }
+      // Checked by range, not exact score, so bonus points can't skip a milestone
+      const theme = themeIndexFor(score);
+      if (theme !== currentTheme) applyTheme(theme, true);
     }
 
     function hitRow(row) {
@@ -1257,8 +1331,7 @@
       score = 0;
       nextNoteIndex = 0;  // the Start tile plays the song's first note
       scoreEl.textContent = '0';
-      currentTint = 0;
-      setBackgroundTint(0);
+      applyTheme(0, false);
       startBestEl.textContent = bestScore;
       gameOverEl.classList.remove('visible');
 
@@ -1338,6 +1411,7 @@
     document.addEventListener('gesturestart', e => e.preventDefault());
     document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
+    buildThemeLayers();
     buildSongButtons();
     updatePicker();
     resetToStartScreen();
